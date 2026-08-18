@@ -1,0 +1,3 @@
+U Backups se nalaze starije verzije prije izmjena, slična situacija kao i kod .py kodova.
+
+Vjerujem da se u /app nalazi finalna verzija koda za Mobile App!

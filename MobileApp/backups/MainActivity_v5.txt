@@ -1,0 +1,993 @@
+@file:Suppress("DEPRECATION")
+
+package com.example.grapplercontrol
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothSocket
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.os.SystemClock
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
+import java.io.OutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
+import kotlin.math.cos
+import kotlin.math.sin
+
+private val Bg = Color(0xFF050814)
+private val Card = Color(0xFF101827)
+private val CardDark = Color(0xFF0B1220)
+private val CardElevated = Color(0xFF121E31)
+private val Border = Color(0xFF26364D)
+private val TextMain = Color(0xFFF8FAFC)
+private val TextMuted = Color(0xFF94A3B8)
+private val Blue = Color(0xFF2563EB)
+private val Red = Color(0xFFDC2626)
+private val Amber = Color(0xFFF59E0B)
+private val Green = Color(0xFF22C55E)
+private val Slate = Color(0xFF334155)
+private val Disabled = Color(0xFF1F2937)
+
+private const val SERVO1_HOME = 175f
+private const val SERVO2_HOME = 5f
+private const val SERVO1_PULL = 5f
+private const val SERVO2_PULL = 175f
+private const val COMMAND_COOLDOWN_MS = 180L
+
+class MainActivity : ComponentActivity() {
+    private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+    private var socket: BluetoothSocket? = null
+    private var output: OutputStream? = null
+    private var input: InputStream? = null
+    private var readerThread: Thread? = null
+    private var onBluetoothMessage: ((String) -> Unit)? = null
+    private var onVoiceCommand: ((String) -> Unit)? = null
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {}
+
+    private val voiceLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spoken = matches?.firstOrNull()?.trim().orEmpty()
+            if (spoken.isNotEmpty()) {
+                onVoiceCommand?.invoke(spoken)
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requestBluetoothPermissions()
+
+        setContent {
+            GrapplerTheme {
+                GrapplerScreen(
+                    getDevices = { getPairedDevices() },
+                    connectDevice = { connectToDevice(it) },
+                    sendCommand = { sendCommand(it) },
+                    disconnect = { disconnect() },
+                    startVoiceRecognition = { startVoiceRecognition() },
+                    setMessageListener = { listener -> onBluetoothMessage = listener },
+                    setVoiceCommandListener = { listener -> onVoiceCommand = listener }
+                )
+            }
+        }
+    }
+
+    private fun startVoiceRecognition() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "bs-BA")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Reci komandu: uhvati, pusti, home, otvori, zategni, test servo jedan, test servo dva ili ping")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        }
+
+        try {
+            voiceLauncher.launch(intent)
+        } catch (_: Exception) {
+            onVoiceCommand?.invoke("VOICE_ERROR")
+        }
+    }
+
+    private fun requestBluetoothPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN
+                )
+            )
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun getPairedDevices(): List<BluetoothDevice> {
+        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return emptyList()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val ok = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!ok) return emptyList()
+        }
+
+        return adapter.bondedDevices.toList().sortedWith(
+            compareByDescending<BluetoothDevice> { (it.name ?: "").contains("HC", ignoreCase = true) }
+                .thenBy { it.name ?: it.address }
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun connectToDevice(device: BluetoothDevice): Boolean = withContext(Dispatchers.IO) {
+        try {
+            disconnect()
+            BluetoothAdapter.getDefaultAdapter()?.cancelDiscovery()
+
+            val s = device.createRfcommSocketToServiceRecord(sppUuid)
+            s.connect()
+
+            socket = s
+            output = s.outputStream
+            input = s.inputStream
+            startReaderThread()
+            true
+        } catch (_: Exception) {
+            disconnect()
+            false
+        }
+    }
+
+    private fun sendCommand(cmd: String): Boolean {
+        return try {
+            val s = socket ?: return false
+            val out = output ?: return false
+            if (!s.isConnected) return false
+
+            val cleaned = cmd.trim()
+            if (cleaned.isEmpty()) return false
+
+            val finalCmd = if (cleaned.length == 1) {
+                cleaned
+            } else {
+                cleaned + "\n"
+            }
+
+            out.write(finalCmd.toByteArray(Charsets.US_ASCII))
+            out.flush()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun startReaderThread() {
+        readerThread = Thread {
+            val buffer = StringBuilder()
+            try {
+                while (socket?.isConnected == true) {
+                    val b = input?.read() ?: break
+                    if (b == '\n'.code) {
+                        val line = buffer.toString().trim()
+                        buffer.clear()
+                        if (line.isNotEmpty()) {
+                            runOnUiThread { onBluetoothMessage?.invoke(line) }
+                        }
+                    } else if (b != '\r'.code) {
+                        buffer.append(b.toChar())
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        readerThread?.start()
+    }
+
+    private fun disconnect() {
+        try { input?.close() } catch (_: Exception) {}
+        try { output?.close() } catch (_: Exception) {}
+        try { socket?.close() } catch (_: Exception) {}
+        input = null
+        output = null
+        socket = null
+        readerThread = null
+    }
+
+    override fun onDestroy() {
+        disconnect()
+        super.onDestroy()
+    }
+}
+
+@SuppressLint("MissingPermission")
+@Composable
+fun GrapplerScreen(
+    getDevices: () -> List<BluetoothDevice>,
+    connectDevice: suspend (BluetoothDevice) -> Boolean,
+    sendCommand: (String) -> Boolean,
+    disconnect: () -> Unit,
+    startVoiceRecognition: () -> Unit,
+    setMessageListener: (((String) -> Unit)?) -> Unit,
+    setVoiceCommandListener: (((String) -> Unit)?) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val scroll = rememberScrollState()
+    val haptic = LocalHapticFeedback.current
+
+    var devices by remember { mutableStateOf<List<BluetoothDevice>>(emptyList()) }
+    var selectedDevice by remember { mutableStateOf<BluetoothDevice?>(null) }
+    var connected by remember { mutableStateOf(false) }
+    var connecting by remember { mutableStateOf(false) }
+    var servo1 by remember { mutableStateOf(SERVO1_HOME) }
+    var servo2 by remember { mutableStateOf(SERVO2_HOME) }
+    var logs by remember { mutableStateOf(listOf<String>()) }
+    var lastCommand by remember { mutableStateOf("Nema") }
+    var lastRx by remember { mutableStateOf("—") }
+    var lastVoice by remember { mutableStateOf("—") }
+    var lastSendAt by remember { mutableLongStateOf(0L) }
+
+    fun now(): String = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+
+    fun log(msg: String) {
+        logs = (logs + "[${now()}] $msg").takeLast(120)
+    }
+
+    fun send(cmd: String, name: String, urgent: Boolean = false): Boolean {
+        if (!connected) {
+            log("WARN: sistem nije povezan")
+            return false
+        }
+
+        val t = SystemClock.elapsedRealtime()
+        if (!urgent && t - lastSendAt < COMMAND_COOLDOWN_MS) {
+            log("WAIT: komanda prebrza")
+            return false
+        }
+        lastSendAt = t
+
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        val ok = sendCommand(cmd)
+        if (ok) {
+            lastCommand = name
+            log("TX: $name -> '${cmd.trim()}'")
+        } else {
+            log("ERROR: komanda nije poslana")
+        }
+        return ok
+    }
+
+    fun executeVoiceCommand(spokenRaw: String) {
+        val spoken = spokenRaw.lowercase(Locale.getDefault())
+        lastVoice = spokenRaw
+        log("VOICE: $spokenRaw")
+
+        val result = when {
+            spokenRaw == "VOICE_ERROR" -> "Greška: telefon ne može otvoriti prepoznavanje govora"
+            "uhvati" in spoken || "grab" in spoken || "zatvori" in spoken -> {
+                if (send("g", "Voice: Uhvati")) {
+                    servo1 = SERVO1_PULL
+                    servo2 = SERVO2_PULL
+                }
+                "Voice komanda: UHVATI"
+            }
+            "stop" in spoken || "pusti" in spoken || "prekid" in spoken || "emergency" in spoken -> {
+                if (send("f", "Voice: E-STOP", urgent = true)) {
+                    servo1 = SERVO1_HOME
+                    servo2 = SERVO2_HOME
+                }
+                "Voice komanda: E-STOP"
+            }
+            "home" in spoken || "počet" in spoken || "pocet" in spoken -> {
+                if (send("h", "Voice: Home")) {
+                    servo1 = SERVO1_HOME
+                    servo2 = SERVO2_HOME
+                }
+                "Voice komanda: HOME"
+            }
+            "otvori" in spoken || "open" in spoken -> {
+                if (send("o", "Voice: Otvori")) {
+                    servo1 = SERVO1_HOME
+                    servo2 = SERVO2_HOME
+                }
+                "Voice komanda: OTVORI"
+            }
+            "zategni" in spoken || "close" in spoken || "stisni" in spoken -> {
+                if (send("c", "Voice: Zategni")) {
+                    servo1 = SERVO1_PULL
+                    servo2 = SERVO2_PULL
+                }
+                "Voice komanda: ZATEGNI"
+            }
+            ("test" in spoken && ("jedan" in spoken || "1" in spoken || "servo 1" in spoken)) -> {
+                send("1", "Voice: Test S1")
+                "Voice komanda: TEST S1"
+            }
+            ("test" in spoken && ("dva" in spoken || "2" in spoken || "servo 2" in spoken)) -> {
+                send("2", "Voice: Test S2")
+                "Voice komanda: TEST S2"
+            }
+            "ping" in spoken || "provjeri" in spoken -> {
+                send("?", "Voice: Ping")
+                "Voice komanda: PING"
+            }
+            else -> "Voice nije prepoznao komandu: $spokenRaw"
+        }
+
+        log(result)
+    }
+
+    LaunchedEffect(Unit) {
+        devices = getDevices()
+        log("Aplikacija pokrenuta")
+        setMessageListener { line ->
+            lastRx = line
+            log("RX: $line")
+        }
+        setVoiceCommandListener { spoken ->
+            executeVoiceCommand(spoken)
+        }
+    }
+
+    val status = when {
+        connected -> "ONLINE"
+        connecting -> "CONNECTING"
+        else -> "OFFLINE"
+    }
+
+    Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scroll)
+                    .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 104.dp)
+            ) {
+                CompactHeader(status = status, selectedName = selectedDevice?.name ?: "Nije izabran")
+                Spacer(Modifier.height(10.dp))
+
+                QuickMetrics(
+                    connected = connected,
+                    lastCommand = lastCommand,
+                    lastRx = lastRx,
+                    voice = lastVoice,
+                    grip = gripIntensity(servo1, servo2)
+                )
+                Spacer(Modifier.height(10.dp))
+
+                VoiceAssistantCard(
+                    enabled = connected,
+                    lastVoice = lastVoice,
+                    onListen = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        startVoiceRecognition()
+                    }
+                )
+                Spacer(Modifier.height(10.dp))
+
+                MainControls(
+                    enabled = connected,
+                    onGrab = {
+                        if (send("g", "Uhvati")) {
+                            servo1 = SERVO1_PULL
+                            servo2 = SERVO2_PULL
+                        }
+                    },
+                    onHome = {
+                        if (send("h", "Home")) {
+                            servo1 = SERVO1_HOME
+                            servo2 = SERVO2_HOME
+                        }
+                    },
+                    onOpen = {
+                        if (send("o", "Otvori")) {
+                            servo1 = SERVO1_HOME
+                            servo2 = SERVO2_HOME
+                        }
+                    },
+                    onClose = {
+                        if (send("c", "Zategni")) {
+                            servo1 = SERVO1_PULL
+                            servo2 = SERVO2_PULL
+                        }
+                    },
+                    onTest1 = { send("1", "Test S1") },
+                    onTest2 = { send("2", "Test S2") },
+                    onPing = { send("?", "Ping") }
+                )
+                Spacer(Modifier.height(10.dp))
+
+                DigitalTwinCard(servo1 = servo1, servo2 = servo2)
+                Spacer(Modifier.height(10.dp))
+
+                CalibrationCard(
+                    enabled = connected,
+                    servo1 = servo1,
+                    servo2 = servo2,
+                    onServo1Change = { servo1 = it },
+                    onServo2Change = { servo2 = it },
+                    onServo1Send = { value -> send("A${value.toInt().toString().padStart(3, '0')}", "Servo 1 ${value.toInt()}°") },
+                    onServo2Send = { value -> send("B${value.toInt().toString().padStart(3, '0')}", "Servo 2 ${value.toInt()}°") }
+                )
+                Spacer(Modifier.height(10.dp))
+
+                BluetoothCard(
+                    devices = devices,
+                    selectedDevice = selectedDevice,
+                    connected = connected,
+                    connecting = connecting,
+                    onRefresh = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        devices = getDevices()
+                        log("Lista uređaja osvježena")
+                    },
+                    onSelect = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        selectedDevice = it
+                    },
+                    onConnect = {
+                        val d = selectedDevice
+                        if (d == null) {
+                            log("WARN: nije izabran uređaj")
+                        } else {
+                            scope.launch {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                connecting = true
+                                log("Povezivanje na ${d.name ?: d.address}...")
+                                val ok = connectDevice(d)
+                                connected = ok
+                                connecting = false
+                                if (ok) {
+                                    lastCommand = "Home"
+                                    log("OK: povezano na ${d.name ?: d.address}")
+                                    delay(250)
+                                    sendCommand("h")
+                                    servo1 = SERVO1_HOME
+                                    servo2 = SERVO2_HOME
+                                } else {
+                                    log("ERROR: konekcija nije uspjela")
+                                }
+                            }
+                        }
+                    },
+                    onDisconnect = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        disconnect()
+                        connected = false
+                        connecting = false
+                        log("Konekcija prekinuta")
+                    }
+                )
+                Spacer(Modifier.height(10.dp))
+
+                HardwareCard()
+                Spacer(Modifier.height(10.dp))
+
+                LogCard(logs = logs)
+            }
+
+            EmergencyStopBar(
+                enabled = connected,
+                onStop = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (send("f", "E-STOP", urgent = true)) {
+                        servo1 = SERVO1_HOME
+                        servo2 = SERVO2_HOME
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    }
+}
+
+@Composable
+fun CompactHeader(status: String, selectedName: String) {
+    val color = when (status) {
+        "ONLINE" -> Green
+        "CONNECTING" -> Amber
+        else -> Red
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Card, RoundedCornerShape(20.dp))
+            .border(1.dp, Border.copy(alpha = 0.44f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.15f))
+                .border(1.dp, color.copy(alpha = 0.40f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(Modifier.size(11.dp).clip(CircleShape).background(color))
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("SPIROB GRAPPLER", color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Black, maxLines = 1)
+            Text(selectedName, color = TextMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        StatusBadge(status, color)
+    }
+}
+
+@Composable
+fun StatusBadge(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.16f), RoundedCornerShape(999.dp))
+            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Text(text, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun EmergencyStopBar(enabled: Boolean, onStop: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Bg.copy(alpha = 0.98f))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Button(
+            onClick = onStop,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Red, disabledContainerColor = Disabled),
+            contentPadding = PaddingValues(horizontal = 10.dp)
+        ) {
+            Text("EMERGENCY STOP", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+fun QuickMetrics(connected: Boolean, lastCommand: String, lastRx: String, voice: String, grip: Int) {
+    Column {
+        Row {
+            MetricBox("Link", if (connected) "Online" else "Offline", if (connected) Green else Red, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            MetricBox("Grip", "$grip%", Green, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        Row {
+            MetricBox("TX", lastCommand, Blue, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            MetricBox("RX", lastRx, Amber, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        MetricBox("Voice", voice, Color(0xFF60A5FA), Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+fun VoiceAssistantCard(enabled: Boolean, lastVoice: String, onListen: () -> Unit) {
+    CardSurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                SectionTitle("Voice Command")
+                Text("Reci: uhvati, pusti, home, otvori, zategni, test servo jedan, test servo dva ili ping", color = TextMuted, fontSize = 11.sp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Button(
+                onClick = onListen,
+                enabled = enabled,
+                modifier = Modifier.height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Blue, disabledContainerColor = Disabled),
+                contentPadding = PaddingValues(horizontal = 14.dp)
+            ) {
+                Text("SLUŠAJ", color = Color.White, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(CardDark, RoundedCornerShape(14.dp))
+                .border(1.dp, Border.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                .padding(10.dp)
+        ) {
+            Text("Zadnje prepoznato: $lastVoice", color = TextMain, fontFamily = FontFamily.Monospace, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+fun MetricBox(label: String, value: String, color: Color, modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .background(CardElevated, RoundedCornerShape(18.dp))
+            .border(1.dp, Border.copy(alpha = 0.50f), RoundedCornerShape(18.dp))
+            .padding(13.dp)
+    ) {
+        Column {
+            Text(label.uppercase(), color = TextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text(value, color = color, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+fun MainControls(
+    enabled: Boolean,
+    onGrab: () -> Unit,
+    onHome: () -> Unit,
+    onOpen: () -> Unit,
+    onClose: () -> Unit,
+    onTest1: () -> Unit,
+    onTest2: () -> Unit,
+    onPing: () -> Unit
+) {
+    CardSurface {
+        SectionTitle("Upravljanje")
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = onGrab,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().height(58.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Blue, disabledContainerColor = Disabled)
+        ) {
+            Text("UHVATI", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+
+        Row {
+            SmallCommand("HOME", Slate, enabled, onHome, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            SmallCommand("OTVORI", Slate, enabled, onOpen, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            SmallCommand("ZATEGNI", Slate, enabled, onClose, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+
+        Row {
+            SmallCommand("TEST S1", Amber, enabled, onTest1, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            SmallCommand("TEST S2", Amber, enabled, onTest2, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            SmallCommand("PING", Amber, enabled, onPing, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+fun SmallCommand(text: String, color: Color, enabled: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = Disabled),
+        contentPadding = PaddingValues(horizontal = 3.dp)
+    ) {
+        Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+fun DigitalTwinCard(servo1: Float, servo2: Float) {
+    val targetGrip = gripIntensity(servo1, servo2)
+    val gripAnimated by animateFloatAsState(targetGrip.toFloat(), animationSpec = tween(450), label = "grip")
+
+    CardSurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionTitle("Digital Twin")
+            Spacer(Modifier.weight(1f))
+            Text("Grip ${gripAnimated.toInt()}%", color = Green, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(CardDark, RoundedCornerShape(22.dp))
+                .border(1.dp, Border.copy(alpha = 0.55f), RoundedCornerShape(22.dp))
+                .padding(14.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxWidth().height(270.dp)) {
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val ratio = (gripAnimated / 100f).coerceIn(0f, 1f)
+                val limbColor = when {
+                    ratio < 0.45f -> Color(0xFF60A5FA)
+                    ratio < 0.80f -> Color(0xFFFACC15)
+                    else -> Green
+                }
+
+                drawCircle(Color(0xFF1E293B), radius = 74f, center = Offset(cx, cy), style = Stroke(width = 3f))
+                drawCircle(Color(0xFF0F172A), radius = 60f, center = Offset(cx, cy))
+
+                for (i in 0 until 6) {
+                    val a = Math.toRadians((i * 60 - 90).toDouble())
+                    val curl = Math.toRadians((18 + 54 * ratio).toDouble())
+                    val x0 = cx + cos(a).toFloat() * 78f
+                    val y0 = cy + sin(a).toFloat() * 78f
+                    val x1 = x0 + cos(a + curl).toFloat() * 64f
+                    val y1 = y0 + sin(a + curl).toFloat() * 64f
+                    val x2 = x1 + cos(a + curl * 1.45).toFloat() * 42f
+                    val y2 = y1 + sin(a + curl * 1.45).toFloat() * 42f
+
+                    drawLine(limbColor, Offset(x0, y0), Offset(x1, y1), strokeWidth = 7f, cap = StrokeCap.Round)
+                    drawLine(limbColor, Offset(x1, y1), Offset(x2, y2), strokeWidth = 5f, cap = StrokeCap.Round)
+                    drawCircle(Color(0xFFCBD5E1), radius = 5.5f, center = Offset(x0, y0))
+                    drawCircle(limbColor, radius = 4.5f, center = Offset(x2, y2))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalibrationCard(
+    enabled: Boolean,
+    servo1: Float,
+    servo2: Float,
+    onServo1Change: (Float) -> Unit,
+    onServo2Change: (Float) -> Unit,
+    onServo1Send: (Float) -> Unit,
+    onServo2Send: (Float) -> Unit
+) {
+    CardSurface {
+        SectionTitle("Kalibracija")
+        Spacer(Modifier.height(12.dp))
+        ServoSlider("Servo 1", servo1, enabled, onServo1Change, { onServo1Send(servo1) })
+        Spacer(Modifier.height(14.dp))
+        ServoSlider("Servo 2", servo2, enabled, onServo2Change, { onServo2Send(servo2) })
+        Spacer(Modifier.height(6.dp))
+        Text("Slider mijenja prikaz, a komanda se šalje tek na dugme radi stabilnije Bluetooth veze.", color = TextMuted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+fun ServoSlider(label: String, value: Float, enabled: Boolean, onChange: (Float) -> Unit, onSend: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Color(0xFFCBD5E1), fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text("${value.toInt()}°", color = Color(0xFFFACC15), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+    }
+    Slider(value = value, onValueChange = onChange, valueRange = 0f..180f, enabled = enabled)
+    Button(
+        onClick = onSend,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().height(42.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Blue, disabledContainerColor = Disabled)
+    ) {
+        Text("POŠALJI $label", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+    }
+}
+
+@SuppressLint("MissingPermission")
+@Composable
+fun BluetoothCard(
+    devices: List<BluetoothDevice>,
+    selectedDevice: BluetoothDevice?,
+    connected: Boolean,
+    connecting: Boolean,
+    onRefresh: () -> Unit,
+    onSelect: (BluetoothDevice) -> Unit,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    CardSurface {
+        SectionTitle("Bluetooth")
+        Spacer(Modifier.height(12.dp))
+        Row {
+            ActionButton("OSVJEŽI", true, Blue, onRefresh, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            ActionButton(if (connecting) "ČEKAJ" else "POVEŽI", !connected && !connecting, Blue, onConnect, Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            ActionButton("PREKINI", connected, Blue, onDisconnect, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(12.dp))
+
+        if (devices.isEmpty()) {
+            Text("Nema uparenih uređaja. Upari HC-06 u Bluetooth postavkama telefona, pa klikni OSVJEŽI.", color = TextMuted, fontSize = 12.sp)
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 190.dp)) {
+                items(devices) { device ->
+                    DeviceItem(device, selectedDevice?.address == device.address) { onSelect(device) }
+                    Spacer(Modifier.height(7.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActionButton(text: String, enabled: Boolean, color: Color, onClick: () -> Unit, modifier: Modifier) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(45.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = color, disabledContainerColor = Disabled),
+        contentPadding = PaddingValues(horizontal = 4.dp)
+    ) {
+        Text(text, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@SuppressLint("MissingPermission")
+@Composable
+fun DeviceItem(device: BluetoothDevice, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) Blue.copy(alpha = 0.22f) else CardDark)
+            .border(1.dp, if (selected) Blue else Border.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+            .padding(13.dp)
+    ) {
+        Column {
+            Text(device.name ?: "Nepoznat uređaj", color = TextMain, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(device.address, color = TextMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+fun HardwareCard() {
+    CardSurface {
+        SectionTitle("Hardver")
+        Spacer(Modifier.height(10.dp))
+        HardwareRow("Baud", "9600")
+        HardwareRow("BT", "HC-06")
+        HardwareRow("RX/TX", "D10 / D11")
+        HardwareRow("S1", "D6")
+        HardwareRow("S2", "D5")
+        HardwareRow("Power", "vanjski 5V/6V")
+    }
+}
+
+@Composable
+fun HardwareRow(name: String, value: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("$name:", color = TextMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.width(70.dp), maxLines = 1)
+        Text(value, color = TextMain, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+fun LogCard(logs: List<String>) {
+    CardSurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionTitle("Komunikacijski log")
+            Spacer(Modifier.weight(1f))
+            Text("${logs.size} linija", color = TextMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(155.dp)
+                .background(Color(0xFF020617), RoundedCornerShape(18.dp))
+                .border(1.dp, Border.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(logs) { line ->
+                    Text(line, color = Color(0xFFE5E7EB), fontFamily = FontFamily.Monospace, fontSize = 9.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SectionTitle(text: String) {
+    Text(text, color = TextMain, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+}
+
+@Composable
+fun CardSurface(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CardElevated, RoundedCornerShape(22.dp))
+            .border(1.dp, Border.copy(alpha = 0.55f), RoundedCornerShape(22.dp))
+            .padding(14.dp),
+        content = content
+    )
+}
+
+fun gripIntensity(s1: Float, s2: Float): Int {
+    val p1 = (SERVO1_HOME - s1) / (SERVO1_HOME - SERVO1_PULL)
+    val p2 = (s2 - SERVO2_HOME) / (SERVO2_PULL - SERVO2_HOME)
+    return (((p1.coerceIn(0f, 1f) + p2.coerceIn(0f, 1f)) / 2f) * 100f).toInt()
+}
+
+@Composable
+fun GrapplerTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = Blue,
+            background = Bg,
+            surface = Card,
+            onPrimary = Color.White,
+            onBackground = Color.White,
+            onSurface = Color.White
+        ),
+        content = content
+    )
+}

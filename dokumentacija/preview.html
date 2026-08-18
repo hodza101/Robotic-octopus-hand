@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="bs">
+<head>
+<meta charset="utf-8">
+<title>Grappler Control - kompletno uputstvo</title>
+<style>
+@page { size: A4; margin: 16mm 13mm 15mm 13mm; @bottom-center { content: "Grappler Control - strana " counter(page); font-size: 8pt; color: #64748b; } }
+* { box-sizing: border-box; }
+body { font-family: "DejaVu Sans", Arial, sans-serif; color: #111827; font-size: 10.2pt; line-height: 1.45; }
+h1 { color: #0f172a; font-size: 18pt; margin: 18pt 0 8pt; border-bottom: 2px solid #1e3a8a; padding-bottom: 3pt; }
+h2 { color: #1e3a8a; font-size: 13pt; margin: 14pt 0 6pt; }
+h3 { color: #334155; font-size: 11pt; margin: 10pt 0 5pt; }
+.title { text-align: center; margin-top: 45mm; }
+.title h1 { border: none; font-size: 30pt; margin-bottom: 7pt; }
+.subtitle { color:#334155; font-size: 13pt; text-align:center; }
+.badge { display:inline-block; padding: 4pt 8pt; background:#dbeafe; color:#1e3a8a; border: 1px solid #bfdbfe; border-radius: 10pt; margin-top: 8pt; font-weight:bold; }
+.note { padding: 8pt 10pt; border: 1px solid #cbd5e1; border-left: 5px solid #2563eb; background: #eff6ff; margin: 8pt 0; }
+.warn { background:#fef3c7; border-left-color:#f59e0b; }
+.danger { background:#fee2e2; border-left-color:#dc2626; }
+.ok { background:#dcfce7; border-left-color:#22c55e; }
+table { width:100%; border-collapse: collapse; margin: 8pt 0 12pt; page-break-inside:auto; }
+th { background:#1e3a8a; color:white; text-align:left; font-size: 9pt; padding:5pt; }
+td { border:1px solid #cbd5e1; padding:5pt; vertical-align:top; font-size: 9pt; }
+td:first-child { background:#eff6ff; font-weight:600; }
+code, pre { font-family: "DejaVu Sans Mono", Consolas, monospace; }
+pre { background:#0f172a; color:#e2e8f0; padding: 8pt; border-radius: 7pt; font-size: 8.2pt; line-height: 1.35; white-space: pre-wrap; margin: 7pt 0 10pt; }
+a { color:#2563eb; text-decoration:none; }
+ul, ol { margin-top:4pt; }
+li { margin-bottom:2pt; }
+.pagebreak { page-break-before: always; }
+.small { font-size: 8.5pt; color:#475569; }
+.checklist li { list-style: "☐ "; margin-left: 0; }
+</style>
+</head>
+<body>
+<section class="title">
+<h1>Grappler Control</h1>
+<p class="subtitle">Kompletno uputstvo za sklapanje, instalaciju, pokretanje i prezentaciju projekta</p>
+<p class="badge">Arduino Uno + HC-06 Bluetooth + Android aplikacija + 2 servo motora + Voice Command</p>
+<div class="note" style="text-align:left; margin-top:20pt;">
+Ovaj dokument je praktični vodič: šta instalirati, kako spojiti hardver, kako pokrenuti Android aplikaciju, kako uploadovati Arduino kod, kako testirati Bluetooth, kako pripremiti GitHub i šta ponijeti na prezentaciju. Verzija opisuje sistem bez pravog cloud AI backenda: koristi se Android speech recognition + sigurnosna potvrda + if provjera prepoznatih riječi.
+</div>
+</section>
+<div class="pagebreak"></div>
+<h1>Sadržaj</h1>
+<ol>
+<li>Kratak opis sistema</li><li>Obavezna oprema i komponente</li><li>Programi za instalaciju na laptopu</li><li>Programi i postavke na Android telefonu</li><li>Spajanje elektronike</li><li>Pravila napajanja i sigurnost</li><li>Arduino IDE: upload i testiranje</li><li>Android Studio: pokretanje aplikacije</li><li>Bluetooth uparivanje HC-06</li><li>Korištenje aplikacije</li><li>Voice command sistem</li><li>GitHub i backup projekta</li><li>Pokretanje projekta na drugom laptopu</li><li>Izrada APK backup fajla</li><li>Demonstracija i checklist</li><li>Troubleshooting</li><li>README i .gitignore šabloni</li><li>Dodatak: opciono AI objašnjenje</li>
+</ol>
+<div class="pagebreak"></div>
+<h1>1. Kratak opis sistema</h1>
+<p><b>Grappler Control</b> je sistem za upravljanje robotskim grappler mehanizmom. Android aplikacija se preko Bluetooth modula HC-06 povezuje sa Arduino Uno kontrolerom. Arduino prima kratke serijske komande i upravlja servo motorima koji pokreću hvatanje, otvaranje i zatezanje mehanizma.</p>
+<div class="note warn"><b>Najvažnije:</b> aplikacija ne napaja serva. Servo motori moraju imati svoje vanjsko 5V/6V napajanje, a GND mora biti zajednički sa Arduinom.</div>
+<table><tr><th>Dio sistema</th><th>Uloga</th></tr><tr><td>Android aplikacija</td><td>Korisnički interfejs, Bluetooth konekcija, dugmad, voice command, log i digital twin prikaz.</td></tr><tr><td>HC-06</td><td>Bežična serijska komunikacija između telefona i Arduina.</td></tr><tr><td>Arduino Uno</td><td>Prima komande i upravlja servo motorima.</td></tr><tr><td>Servo motori</td><td>Mehanički pokreću grappler.</td></tr><tr><td>Vanjsko napajanje</td><td>Daje dovoljno struje servo motorima.</td></tr></table>
+<h1>2. Obavezna oprema i komponente</h1>
+<table><tr><th>Komponenta</th><th>Napomena</th></tr><tr><td>Arduino Uno</td><td>Glavni kontroler sistema.</td></tr><tr><td>HC-06 Bluetooth modul</td><td>Klasični Bluetooth SPP modul. PIN je najčešće <b>1234</b> ili <b>0000</b>.</td></tr><tr><td>2x servo motor</td><td>Signalni pinovi su D6 i D5.</td></tr><tr><td>Vanjsko 5V/6V napajanje</td><td>Power bank, stabilan adapter ili buck converter. Mora dati dovoljno struje za serva.</td></tr><tr><td>Jumper žice</td><td>Za signal, VCC i GND veze.</td></tr><tr><td>Breadboard</td><td>Opcionalno, olakšava povezivanje.</td></tr><tr><td>Djelitelj napona</td><td>Za HC-06 RXD jer Arduino TX može davati 5V logiku.</td></tr><tr><td>USB kabal za Arduino</td><td>Upload koda i napajanje Arduina.</td></tr><tr><td>USB kabal za Android telefon</td><td>Instalacija aplikacije iz Android Studija.</td></tr><tr><td>Android telefon</td><td>Za aplikaciju i Bluetooth konekciju.</td></tr><tr><td>Laptop/PC</td><td>Za Arduino IDE, Android Studio i GitHub.</td></tr></table>
+<div class="note danger"><b>Ne spajati 9V blok bateriju direktno na serva.</b> Tipične 9V baterije ne daju dovoljno struje za dva servo motora i mogu uzrokovati trzanje, resetovanje ili nestabilan rad.</div>
+<h1>3. Programi za instalaciju na laptopu</h1>
+<p>Instaliraj programe sa službenih stranica. Linkovi su navedeni kao puni URL-ovi da ih možeš kopirati i otvoriti na bilo kojem laptopu.</p>
+<table><tr><th>Program</th><th>Zašto treba</th><th>Službeni link</th></tr><tr><td>Arduino IDE</td><td>Upload Arduino koda i Serial Monitor.</td><td><a href="https://www.arduino.cc/en/software">https://www.arduino.cc/en/software</a></td></tr><tr><td>Android Studio</td><td>Build i instalacija Android aplikacije.</td><td><a href="https://developer.android.com/studio">https://developer.android.com/studio</a></td></tr><tr><td>Git for Windows</td><td>Rad sa GitHub repozitorijem.</td><td><a href="https://git-scm.com/install/windows">https://git-scm.com/install/windows</a></td></tr><tr><td>Samsung Android USB Driver</td><td>Ako Windows ne prepoznaje Samsung telefon preko USB-a.</td><td><a href="https://developer.samsung.com/android-usb-driver">https://developer.samsung.com/android-usb-driver</a></td></tr><tr><td>scrcpy</td><td>Prikaz i kontrola Android telefona preko USB-a.</td><td><a href="https://github.com/Genymobile/scrcpy">https://github.com/Genymobile/scrcpy</a></td></tr><tr><td>AnyDesk Windows</td><td>Bežični prikaz/kontrola uređaja kao TeamViewer alternativa.</td><td><a href="https://anydesk.com/en/downloads/windows">https://anydesk.com/en/downloads/windows</a></td></tr><tr><td>AnyDesk Android</td><td>Aplikacija na telefonu za remote prikaz/kontrolu.</td><td><a href="https://anydesk.com/en/downloads/android">https://anydesk.com/en/downloads/android</a></td></tr></table>
+<div class="note ok">Ako koristiš samo voice command sa if provjerom riječi, ne treba Python server, OpenAI API key, Flask, niti dodatni AI backend.</div>
+<h1>4. Programi i postavke na Android telefonu</h1>
+<ul><li>GrapplerControl aplikacija instalirana iz Android Studija ili preko APK fajla.</li><li>Serial Bluetooth Terminal za nezavisno testiranje HC-06 modula.</li><li>AnyDesk Android ako želiš prikaz telefona na PC-u kao TeamViewer.</li><li>Bluetooth uključen.</li><li>USB debugging uključen za instalaciju aplikacije preko Android Studija.</li></ul>
+<h2>4.1 Uključivanje Developer Options i USB debugging</h2><ol><li>Otvori Settings/Postavke.</li><li>Idi na About phone/O telefonu.</li><li>Otvori Software information/Informacije o softveru.</li><li>Klikni 7 puta na Build number/Broj podverzije.</li><li>Vrati se u glavne postavke i otvori Developer options/Opcije za programere.</li><li>Uključi USB debugging/USB otklanjanje grešaka.</li><li>Spoji telefon USB kablom na laptop i potvrdi Allow/Dozvoli.</li></ol>
+<h1>5. Spajanje elektronike</h1>
+<div class="note danger">Prije spajanja isključi napajanje. Provjeri polaritet napajanja serva. Pogrešan VCC/GND spoj može oštetiti servo ili Arduino.</div>
+<table><tr><th>Veza</th><th>Spoj</th></tr><tr><td>HC-06 VCC</td><td>Arduino 5V</td></tr><tr><td>HC-06 GND</td><td>Arduino GND</td></tr><tr><td>HC-06 TXD</td><td>Arduino D10</td></tr><tr><td>HC-06 RXD</td><td>Arduino D11 preko djelitelja napona</td></tr><tr><td>Servo 1 signal</td><td>Arduino D6</td></tr><tr><td>Servo 2 signal</td><td>Arduino D5</td></tr><tr><td>Servo +</td><td>Vanjsko 5V/6V napajanje</td></tr><tr><td>Servo -</td><td>GND vanjskog napajanja</td></tr><tr><td>Zajednički GND</td><td>Arduino GND + HC-06 GND + GND napajanja serva</td></tr></table>
+<h2>5.1 ASCII šema spajanja</h2><pre>Android telefon
+    |
+    | Bluetooth
+    v
+HC-06 modul
+    TXD  ------------&gt; Arduino D10
+    RXD  &lt;--- djelitelj napona &lt;--- Arduino D11
+    VCC  ------------&gt; Arduino 5V
+    GND  ------------&gt; Arduino GND
+
+Servo 1 signal ------&gt; Arduino D6
+Servo 2 signal ------&gt; Arduino D5
+
+Servo +  ------------&gt; vanjsko 5V/6V napajanje
+Servo -  ------------&gt; GND vanjskog napajanja
+Arduino GND ---------&gt; GND vanjskog napajanja</pre>
+<h1>6. Pravila napajanja i sigurnost</h1><ul><li>Servo motore ne napajaj direktno iz Arduino 5V pina ako se pod opterećenjem trzaju ili resetuju sistem.</li><li>Koristi vanjsko 5V/6V napajanje koje može dati dovoljno struje.</li><li>GND mora biti zajednički: Arduino GND, HC-06 GND i GND napajanja serva.</li><li>Ne spajati 9V blok bateriju direktno na serva.</li><li>Za HC-06 RXD koristi djelitelj napona jer Arduino TX izlaz može biti 5V.</li><li>Emergency Stop u aplikaciji treba uvijek biti dostupan.</li></ul><div class="note warn">Ako se servo pomjera kada je spojen na Arduino, ali ne radi na vanjskom napajanju, gotovo sigurno fali zajednički GND ili napajanje ne daje dovoljno struje.</div>
+<h1>7. Arduino IDE: upload i testiranje</h1><ol><li>Otvori Arduino IDE.</li><li>Tools -&gt; Board -&gt; Arduino Uno.</li><li>Tools -&gt; Port -&gt; izaberi COM port Arduina.</li><li>Otvori fajl <code>arduino/grappler_controller.ino</code>.</li><li>Klikni Upload.</li><li>Otvori Serial Monitor na 9600 baud.</li><li>Testiraj komande iz aplikacije ili Serial Bluetooth Terminala.</li></ol>
+<h2>7.1 Komande koje Arduino treba primati</h2><table><tr><th>Komanda</th><th>Značenje</th></tr><tr><td>g</td><td>UHVATI</td></tr><tr><td>f</td><td>E-STOP / PUSTI / STOP</td></tr><tr><td>h</td><td>HOME</td></tr><tr><td>o</td><td>OTVORI</td></tr><tr><td>c</td><td>ZATEGNI</td></tr><tr><td>1</td><td>TEST SERVO 1</td></tr><tr><td>2</td><td>TEST SERVO 2</td></tr><tr><td>?</td><td>PING / PROVJERA STANJA</td></tr><tr><td>A090</td><td>Servo 1 na 90 stepeni</td></tr><tr><td>B120</td><td>Servo 2 na 120 stepeni</td></tr></table>
+<h2>7.2 Arduino parser mora ignorisati prazne znakove</h2><pre>char c = BT.read();
+
+if (c == '\n' || c == '\r' || c == ' ') {
+  return;
+}</pre><div class="note ok">Ovo uklanja problem "Nepoznata komanda" kada Arduino primi newline ili carriage return iz Bluetooth bafera.</div>
+<h1>8. Android Studio: pokretanje aplikacije</h1><ol><li>Otvori Android Studio.</li><li>Klikni Open i izaberi folder Android projekta.</li><li>Sačekaj Gradle Sync.</li><li>Spoji Android telefon USB kablom.</li><li>Na telefonu potvrdi USB debugging.</li><li>Gore desno izaberi telefon.</li><li>Klikni Run.</li></ol>
+<h2>8.1 AndroidManifest.xml dozvole</h2><pre>&lt;uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" /&gt;
+&lt;uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" /&gt;
+&lt;uses-permission android:name="android.permission.BLUETOOTH_CONNECT" /&gt;
+&lt;uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" /&gt;</pre><div class="note">INTERNET permission nije potreban ako ne koristiš pravi AI backend ili online funkcije.</div>
+<h1>9. Bluetooth uparivanje HC-06</h1><ol><li>Na telefonu otvori Settings -&gt; Bluetooth.</li><li>Klikni Pair new device/Upari novi uređaj.</li><li>Izaberi HC-06.</li><li>Unesi PIN 1234. Ako ne radi, probaj 0000.</li><li>U GrapplerControl aplikaciji klikni OSVJEŽI.</li><li>Izaberi HC-06 iz liste.</li><li>Klikni POVEŽI.</li><li>Testiraj PING.</li></ol>
+<h1>10. Korištenje aplikacije</h1><table><tr><th>Dugme</th><th>Šta radi</th></tr><tr><td>UHVATI</td><td>Šalje g i pokreće hvatanje</td></tr><tr><td>HOME</td><td>Šalje h i vraća serva na početne uglove</td></tr><tr><td>OTVORI</td><td>Šalje o i otvara gripper</td></tr><tr><td>ZATEGNI</td><td>Šalje c i zateže gripper</td></tr><tr><td>TEST S1</td><td>Šalje 1 i testira servo 1</td></tr><tr><td>TEST S2</td><td>Šalje 2 i testira servo 2</td></tr><tr><td>PING</td><td>Šalje ?; Arduino treba vratiti PONG</td></tr><tr><td>EMERGENCY STOP</td><td>Šalje f i prekida/pusti sistem</td></tr></table><div class="note ok">Za prezentaciju uvijek prvo pokaži PING. Ako aplikacija dobije PONG, komisija odmah vidi da komunikacija stvarno radi.</div>
+<h1>11. Voice command sistem</h1><p>Voice command koristi Android speech recognition. Telefon pretvara govor u tekst, aplikacija preko jednostavne provjere riječi predloži komandu, a korisnik mora kliknuti POTVRDI da bi komanda bila poslana Arduinu.</p><table><tr><th>Izgovor</th><th>Prijedlog</th></tr><tr><td>uhvati / uhvati lagano / grab</td><td>UHVATI -&gt; g</td></tr><tr><td>pusti / stop / prekid / emergency</td><td>E-STOP -&gt; f</td></tr><tr><td>home / početni položaj</td><td>HOME -&gt; h</td></tr><tr><td>otvori / open</td><td>OTVORI -&gt; o</td></tr><tr><td>zategni / stisni / close</td><td>ZATEGNI -&gt; c</td></tr><tr><td>test servo jedan</td><td>TEST S1 -&gt; 1</td></tr><tr><td>test servo dva</td><td>TEST S2 -&gt; 2</td></tr><tr><td>ping / provjeri stanje</td><td>PING -&gt; ?</td></tr></table><div class="note">Ovo nije pravi AI model. To je speech recognition + provjera riječi + sigurnosna potvrda. Za maturski je bolje to tačno objasniti nego tvrditi da je AI.</div>
+<h1>12. GitHub i backup projekta</h1><p>Preporučena struktura repozitorija:</p><pre>grappler-control/
+  android-app/
+    GrapplerControl project files
+  arduino/
+    grappler_controller.ino
+  docs/
+    wiring_diagram.png
+    app_screenshot.png
+    project_description.md
+  README.md
+  .gitignore</pre><h2>12.1 Git komande</h2><pre>cd C:\grapplerMat
+
+git init
+git add .
+git commit -m "Initial Grappler Control project"
+
+git remote add origin https://github.com/USERNAME/REPO_NAME.git
+git branch -M main
+git push -u origin main</pre><h2>12.2 Ako Git traži ime i email</h2><pre>git config --global user.name "Edin"
+git config --global user.email "tvoj_email@example.com"</pre>
+<h1>13. Pokretanje projekta na drugom laptopu</h1><ol><li>Instaliraj Git, Android Studio i Arduino IDE.</li><li>Kloniraj repozitorij.</li><li>Otvori Android projekat u Android Studiju.</li><li>Sačekaj Gradle Sync.</li><li>Uključi USB debugging na telefonu.</li><li>Klikni Run za instalaciju aplikacije.</li><li>Otvori Arduino IDE i uploaduj .ino kod na Arduino Uno.</li><li>Upari HC-06 sa telefonom.</li><li>Testiraj PING i zatim ostale komande.</li></ol><pre>git clone https://github.com/USERNAME/REPO_NAME.git
+cd REPO_NAME</pre>
+<h1>14. Izrada APK backup fajla</h1><ol><li>U Android Studiju klikni Build.</li><li>Izaberi Build App Bundle(s) / APK(s).</li><li>Klikni Build APK(s).</li><li>APK se nalazi u <code>app/build/outputs/apk/debug/app-debug.apk</code>.</li><li>Sačuvaj APK na USB ili u GitHub Releases kao backup.</li></ol><div class="note ok">APK backup je koristan ako na dan prezentacije Android Studio ne radi ili nema vremena za build.</div>
+<h1>15. Demonstracija i checklist</h1><ul class="checklist"><li>Laptop punjač</li><li>Android telefon napunjen</li><li>Arduino Uno</li><li>USB kabal za Arduino</li><li>USB kabal za telefon</li><li>HC-06 modul</li><li>Servo motori</li><li>Vanjsko 5V/6V napajanje</li><li>Jumper žice</li><li>Rezervne žice</li><li>Aplikacija instalirana</li><li>Arduino kod uploadovan</li><li>Serial Bluetooth Terminal instaliran kao backup</li><li>Screenshot šeme spajanja</li><li>APK backup fajl</li></ul><h2>15.1 Redoslijed demonstracije</h2><ol><li>Pokaži hardver i objasni komponente.</li><li>Pokaži šemu spajanja.</li><li>Uključi napajanje.</li><li>Otvori aplikaciju.</li><li>Poveži HC-06.</li><li>Klikni PING i pokaži PONG u logu.</li><li>Klikni HOME.</li><li>Klikni TEST S1 i TEST S2.</li><li>Klikni UHVATI.</li><li>Klikni EMERGENCY STOP.</li><li>Pokaži Voice Command: SLUŠAJ -&gt; reci ping -&gt; POTVRDI.</li><li>Objasni sigurnosnu potvrdu prije slanja komande.</li></ol>
+<h1>16. Troubleshooting</h1><table><tr><th>Problem</th><th>Najčešći uzrok</th><th>Rješenje</th></tr><tr><td>Aplikacija se poveže, servo ne radi</td><td>Servo nema dovoljno struje ili nema zajednički GND</td><td>Provjeri vanjsko napajanje i spoji sve GND zajedno</td></tr><tr><td>RX pokazuje Nepoznata komanda</td><td>Arduino čita newline ili prazan znak</td><td>U Arduino kod dodaj ignorisanje \n, \r i razmaka</td></tr><tr><td>Telefon ne vidi HC-06</td><td>Modul nije uparen ili je povezan na drugi uređaj</td><td>Restart HC-06, upari ponovo, PIN 1234/0000</td></tr><tr><td>Android Studio ne vidi telefon</td><td>USB debugging nije potvrđen ili fali driver</td><td>Uključi USB debugging, promijeni kabal, instaliraj Samsung driver</td></tr><tr><td>Servo trza</td><td>Slabo napajanje, šum, nedovoljan GND</td><td>Koristi jače 5V/6V napajanje i zajednički GND</td></tr><tr><td>Upload na Arduino ne radi</td><td>Pogrešan COM port ili board</td><td>Tools -&gt; Board Arduino Uno, Tools -&gt; Port pravi COM</td></tr><tr><td>Bluetooth terminal radi, aplikacija ne radi</td><td>Aplikacija šalje format komande koji Arduino ne očekuje</td><td>Provjeri sendCommand i Arduino parser</td></tr></table>
+<h1>17. README i .gitignore šabloni</h1><h2>17.1 README.md</h2><pre># Grappler Control
+
+Grappler Control je Android aplikacija za upravljanje robotskim grappler mehanizmom preko HC-06 Bluetooth modula i Arduino Uno kontrolera.
+
+Funkcije:
+- Bluetooth povezivanje sa HC-06 modulom
+- kontrola dva servo motora
+- komande: UHVATI, OTVORI, ZATEGNI, HOME, E-STOP
+- testiranje servo motora
+- kalibracija uglova
+- komunikacijski log
+- digital twin prikaz
+- voice command sistem sa potvrdom prije slanja komande
+
+Hardver:
+- Arduino Uno
+- HC-06 Bluetooth
+- 2x servo motor
+- vanjsko 5V/6V napajanje za serva
+
+Napomena: Servo motori koriste vanjsko napajanje, a GND mora biti zajednički sa Arduinom.</pre><h2>17.2 .gitignore</h2><pre>.gradle/
+.idea/
+build/
+*/build/
+local.properties
+*.iml
+.DS_Store
+Thumbs.db
+*.apk
+*.aab</pre>
+<h1>18. Dodatak: opciono AI objašnjenje</h1><p>Ako koristiš samo if provjeru riječi, ovaj projekat nema pravi AI backend. Ispravno objašnjenje je: aplikacija koristi Android speech recognition, zatim jednostavnu interpretaciju prepoznatih riječi i sigurnosnu potvrdu prije slanja komande.</p><div class="note warn">Ako nekad želiš dodati pravi AI, API key ne smije biti direktno u Android aplikaciji. Sigurnije je koristiti backend server na laptopu koji poziva AI API, a aplikacija samo šalje tekst serveru i dobije prijedlog komande.</div>
+<h1>Brza završna checklist lista</h1><ul class="checklist"><li>Arduino kod uploadovan.</li><li>HC-06 uparen sa telefonom.</li><li>Aplikacija instalirana i radi.</li><li>PING vraća PONG.</li><li>Servo napajanje radi.</li><li>GND zajednički.</li><li>Voice command predlaže komandu, ali ne šalje bez potvrde.</li><li>GitHub repozitorij ima android-app, arduino, docs i README.</li><li>APK backup sačuvan.</li></ul>
+</body></html>
