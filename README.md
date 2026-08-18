@@ -1,6 +1,6 @@
-# Maturski rad
+# Robotic Octopus Hand
 
-Ovaj repozitorij sadrži materijale i dokumentaciju za maturski rad.
+Ovaj repozitorij sadrži materijale i dokumentaciju za maturski rad na temu robotske šake inspirisane hobotnicom.
 
 ## Informacije o autorima
 
@@ -8,27 +8,30 @@ Ovaj repozitorij sadrži materijale i dokumentaciju za maturski rad.
 * **Ustanova:** JU MS Elektrotehnička škola Tuzla
 * **Zvanje:** Tehničar računarstva
 
+## 💡 Ključni savjet (Preporuka)
+Za dublje razumijevanje principa rada, metodologije i tehnologija korištenih pri razvoju ovakvih mehatroničkih sistema, toplo preporučujemo da pogledate sljedeći naučni rad:
+[**Soft robotic grippers: A comprehensive review**](https://www.sciencedirect.com/science/article/pii/S2666998624006033)
+
 ## Struktura projekta
 
-Projekat sadrži kodove za:
-
+Projekat obuhvata:
 * Desktop aplikaciju
 * Mobilnu (Android) aplikaciju
 * Arduino (početna testiranja)
-* STM32 (kao glavni mikrokontroler)
+* STM32 (glavni mikrokontroler)
 
 ## Tehnički detalji i napomene
 
-Nažalost, u ovom repozitoriju nedostaju finalne verzije kodova koje su korištene pri odbrani maturskog rada, kao i finalne verzije dokumentacije. Ove materijale možete dobiti od profesora, koji posjeduje kopije. U toj dokumentaciji se nalazi finalni kod za STM32, kao i pojedini dijelovi kodova za desktop i mobilnu aplikaciju.
+**Napomena:** U ovom repozitoriju možda nedostaju finalne verzije kodova korištenih pri odbrani maturskog rada, kao i finalne verzije dokumentacije. Za potpune materijale, uključujući finalni kod za STM32 i dijelove koda za aplikacije, molimo kontaktirajte profesora koji posjeduje arhivirane kopije.
 
 ## Uputstvo za pregled
 
 1. Preuzmite cijeli repozitorij na lokalnu mašinu.
-2. **Važno:** Obavezno pratite finalnu dokumentaciju koju ćete dobiti od profesora; tu se nalaze sva potrebna objašnjenja.
-3. Za Python kodove, potrebne biblioteke se nalaze u fajlu `requirements.txt`.
-4. Za rad na mobilnoj Android aplikaciji korišten je Android Studio.
-5. U repozitoriju se nalazi i folder sa slikama za određene CAD crteže.
+2. **Važno:** Obavezno koristite finalnu dokumentaciju od profesora kao primarni izvor informacija.
+3. **Python:** Potrebne biblioteke se nalaze u fajlu `requirements.txt`.
+4. **Android:** Za rad na mobilnoj aplikaciji koristite Android Studio.
+5. **CAD:** Folder sa slikama sadrži CAD crteže dizajna.
 
 ## Kontakt
 
-Sretno u daljem radu! U slučaju pitanja, ili ukoliko želite proširiti i poboljšati ovaj repozitorij, možete me kontaktirati putem e-maila: [hodzicedin078@gmail.com](mailto:hodzicedin078@gmail.com).
+Sretno u daljem radu! U slučaju pitanja ili prijedloga za poboljšanje, kontaktirajte me na: [hodzicedin078@gmail.com](mailto:hodzicedin078@gmail.com).
