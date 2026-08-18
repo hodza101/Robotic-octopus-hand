@@ -8,7 +8,7 @@ Ovaj repozitorij sadrži materijale i dokumentaciju za maturski rad na temu robo
 * **Ustanova:** JU MS Elektrotehnička škola Tuzla
 * **Zvanje:** Tehničar računarstva
 
-## 💡 Ključni savjet (Preporuka)
+## Ključni savjet (Preporuka)
 Za dublje razumijevanje principa rada, metodologije i tehnologija korištenih pri razvoju ovakvih mehatroničkih sistema, toplo preporučujemo da pogledate sljedeći naučni rad:
 [**Soft robotic grippers: A comprehensive review**](https://www.sciencedirect.com/science/article/pii/S2666998624006033)
 
